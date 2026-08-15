@@ -1,0 +1,31 @@
+# ---- data & corpora (never commit; several GB) ----
+# only the top-level data dir, NOT src/scholarrl/data/ source code
+/data/
+*.jsonl
+*.zip
+id2paper.json
+
+# ---- extracted / built corpus & indexes ----
+*.faiss
+*.index
+*.pkl
+
+# ---- model artifacts & run outputs ----
+outputs/
+checkpoints/
+*.bin
+*.safetensors
+*.pt
+wandb/
+
+# ---- python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.egg-info/
+.ipynb_checkpoints/
+
+# ---- os / editor ----
+.DS_Store

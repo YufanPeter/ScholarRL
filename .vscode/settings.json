@@ -1,0 +1,21 @@
+{
+  "//": "Keep VSCode fast: never watch/search the multi-GB data dir or the 555k-file corpus.",
+  "files.watcherExclude": {
+    "**/data/**": true,
+    "**/outputs/**": true,
+    "**/.venv/**": true
+  },
+  "search.exclude": {
+    "**/data/**": true,
+    "**/outputs/**": true,
+    "**/.venv/**": true
+  },
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true
+  },
+  "python.analysis.exclude": [
+    "**/data/**",
+    "**/outputs/**"
+  ]
+}

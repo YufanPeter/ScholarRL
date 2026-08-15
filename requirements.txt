@@ -1,0 +1,18 @@
+# Core (Phase 0: data, corpus, BM25, env, reward, eval)
+numpy
+pyyaml
+tqdm
+rank-bm25            # V1 retriever; swap for pyserini if you want a stronger BM25
+orjson               # fast JSON for the 555k-file zip / 58MB id2paper
+
+# Policy rollout (Phase 0 zero-shot baseline)
+torch
+transformers
+accelerate
+
+# Added later:
+# vllm               # fast rollout generation (Phase 2)
+# peft               # LoRA (Phase 2 Stage A)
+# faiss-cpu          # dense retriever index (retriever V2)
+# sentence-transformers  # bge/e5 embeddings (retriever V2)
+# verl               # scaled GRPO trainer (Phase 2 Stage B)
