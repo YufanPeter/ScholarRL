@@ -1,0 +1,36 @@
+# Scholar-R1 base config. Values here are starting points from the plan, not tuned.
+
+corpus:
+  # subset corpus difficulty knob: how many distractor papers per gold paper
+  distractor_ratio: 5          # start easy (5), raise later for harder retrieval
+  hard_negative_topk: 20       # pull BM25 top-k non-answers as hard negatives
+  include_random_distractors: true
+
+retriever:
+  kind: bm25                   # bm25 (V1) | dense (V2, drop-in)
+  top_k: 3                     # results returned per <search>
+
+env:
+  max_turns: 4
+  dedup_queries: true
+  abstract_max_tokens: 256
+
+reward:
+  metric: recall               # recall | f1
+  k: 20
+  lambda_fmt: 0.1              # format bonus (stabilizes small models)
+  # Phase 3 cost-aware terms (0 = off for now)
+  alpha_search_cost: 0.0
+  beta_token_cost: 0.0
+
+model:
+  name: Qwen/Qwen2.5-3B-Instruct       # main; use 0.5B for smoke tests
+  lora_rank: 32                        # LoRA is required on single A100 (no full fine-tune)
+
+grpo:
+  group_size: 8                # 80GB: 8 · 40GB: drop to 4-5
+  kl_coef: 0.001
+  lr: 1.0e-6
+  train_subset: 1000           # sampled from train.jsonl (33551 total)
+
+seed: 42
