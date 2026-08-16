@@ -2,7 +2,8 @@
 numpy
 pyyaml
 tqdm
-rank-bm25            # V1 retriever; swap for pyserini if you want a stronger BM25
+bm25s                # BM25 retriever (sparse matrix backend; fast, saveable index)
+scipy                # bm25s sparse-matrix backend
 orjson               # fast JSON for the 555k-file zip / 58MB id2paper
 
 # Policy rollout (Phase 0 zero-shot baseline)
