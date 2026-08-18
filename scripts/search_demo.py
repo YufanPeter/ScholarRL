@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import sys
 
-from src.scholarrl.data import load_queries, retrievable_gold_ids
-from src.scholarrl.retriever import BM25Retriever
+from scholarrl.data import load_queries, retrievable_gold_ids
+from scholarrl.retriever import BM25Retriever
 
 K = 5
 

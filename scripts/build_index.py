@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time
 
-from src.scholarrl.retriever import BM25Retriever, INDEX_DIR
+from scholarrl.retriever import BM25Retriever, INDEX_DIR
 
 
 def main() -> None:

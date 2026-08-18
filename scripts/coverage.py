@@ -15,8 +15,8 @@ from __future__ import annotations
 import zipfile
 from collections import Counter
 
-from src.scholarrl.data import load_queries, load_id2paper, resolve_gold
-from src.scholarrl.paths import CORPUS_ZIP
+from scholarrl.data import load_queries, load_id2paper, resolve_gold
+from scholarrl.paths import CORPUS_ZIP
 
 
 def _zip_filenames() -> set:

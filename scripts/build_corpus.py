@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import sys
 
-from src.scholarrl.corpus import build_corpus
-from src.scholarrl.paths import PAPERS_JSONL
+from scholarrl.corpus import build_corpus
+from scholarrl.paths import PAPERS_JSONL
 
 
 def main() -> None:
@@ -20,6 +20,7 @@ def main() -> None:
     print(f"  distractors    : {counts['distractors']}")
     print(f"  total          : {counts['total']}")
     print(f"  skipped (empty): {counts['skipped']}")
+    print(f"  backfilled title: {counts.get('backfilled_titles', 0)}")
     print(f"  -> {PAPERS_JSONL}")
 
 
