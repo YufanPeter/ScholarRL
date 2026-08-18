@@ -11,9 +11,10 @@ retriever:
   top_k: 3                     # results returned per <search>
 
 env:
-  max_turns: 4
+  max_retrieval_turns: 6       # budget for EXPENSIVE actions (search + read); select/finish are free
+  max_steps: 20                # hard cap on total steps (prevents cheap-action loops)
   dedup_queries: true
-  abstract_max_tokens: 256
+  abstract_max_words: 256      # abstracts truncated by whitespace-split words (matches env)
 
 reward:
   metric: recall               # recall | f1

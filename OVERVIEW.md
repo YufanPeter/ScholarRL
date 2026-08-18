@@ -13,7 +13,7 @@ decide which papers to select, and decide when to stop. RL trains those decision
 ```
 research query
    -> agent: <think> ... </think>
-   -> agent: <search> rewritten keywords </search>   --BM25 tool-->  <observation> top-k papers </observation>
+   -> agent: <search> rewritten keywords </search>   --BM25 tool-->  <observation> top-k titles </observation>
    -> agent: <search> another angle </search>         --BM25 tool-->  <observation> ... </observation>
    -> agent: <read> paper_id </read>                  ----------->   <observation> abstract </observation>
    -> agent: <select> id, id, ... </select>
@@ -31,8 +31,9 @@ policy does.
   Each = `question` + gold `answer_arxiv_id` (avg 2.6 answers/query).
 - **Corpus**: `cs_paper_2nd.zip` (569,432 CS papers, 2007-2024, each with title+abstract+sections)
   and `id2paper.json` (arxiv_id -> title).
-- **Verified**: 92.0% of gold answers are end-to-end retrievable from the corpus
-  (id -> title -> normalized filename). Offline BM25 plan is sound; no live API.
+- **Verified**: 94.4% of gold answers are end-to-end retrievable from the corpus
+  (id -> title -> normalized filename), after id normalization. 31,159 unique gold papers
+  in the subset corpus. Offline BM25 plan is sound; no live API.
 
 ## Model & hardware
 
@@ -41,7 +42,7 @@ policy does.
 - **Must use LoRA + vLLM rollout** (no full fine-tune). LoRA also gives the KL reference for
   free: disable the adapter = base weights, no second model copy in memory.
 - **A100 80GB**: comfortable (group size 8). **A100 40GB**: works with LoRA, group size 4-5,
-  3-4 turns, truncated abstracts.
+  smaller retrieval budget, truncated abstracts.
 - Memory driver is **sequence length x group size**, not the base model — keep trajectories
   short and abstracts truncated.
 
