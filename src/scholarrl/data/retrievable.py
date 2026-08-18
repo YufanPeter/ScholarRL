@@ -25,11 +25,16 @@ def zip_filenames() -> frozenset:
 
 @lru_cache(maxsize=1)
 def retrievable_gold_ids() -> frozenset:
-    """Gold arxiv ids whose paper resolves to a real file in the zip (end-to-end)."""
+    """Gold arxiv ids whose paper resolves to a real file in the zip (end-to-end).
+
+    Ids are NORMALIZED (version suffix stripped) so this set is directly comparable
+    to the normalized ids used by reward / corpus. Different versions of the same
+    paper (e.g. '2202.07565v1' and '2202.07565') collapse to one entry.
+    """
     names = zip_filenames()
     out: Set[str] = set()
     for a in all_gold_ids():
         res = resolve_gold(a)
         if res.filename and res.filename in names:
-            out.add(a)
+            out.add(res.norm_id)
     return frozenset(out)

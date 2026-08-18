@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import sys
 
-from src.scholarrl.data import load_queries, retrievable_gold_ids
-from src.scholarrl.retriever import BM25Retriever
+from scholarrl.data import load_queries, retrievable_gold_ids
+from scholarrl.data.normalize import norm_arxiv_id
+from scholarrl.retriever import BM25Retriever
 
 
 def main() -> None:
@@ -29,10 +30,12 @@ def main() -> None:
     recalls = []
     hit_any = 0
     for q in queries:
-        gold = [a for a in q.answer_ids if a in retr]
+        # retr holds NORMALIZED ids; normalize answer_ids on both sides before comparing,
+        # or versioned gold (e.g. '2001.01328v6') silently misses its entry.
+        gold = {norm_arxiv_id(a) for a in q.answer_ids if norm_arxiv_id(a) in retr}
         if not gold:
             continue
-        found = {pid for pid, _ in r.search(q.question, k=k)}
+        found = {norm_arxiv_id(pid) for pid, _ in r.search(q.question, k=k)}
         hits = sum(1 for g in gold if g in found)
         recalls.append(hits / len(gold))
         if hits > 0:

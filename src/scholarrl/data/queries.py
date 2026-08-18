@@ -30,10 +30,15 @@ class QueryRecord:
         )
 
     def availability(self, retrievable: set) -> str:
-        """'full' | 'partial' | 'none' | 'empty' given the set of retrievable gold ids."""
+        """'full' | 'partial' | 'none' | 'empty' given the set of retrievable gold ids.
+
+        `retrievable` holds normalized ids, so answer_ids are normalized before the
+        membership test (a versioned answer_id must still match its normalized entry).
+        """
+        from .normalize import norm_arxiv_id
         if not self.answer_ids:
             return "empty"
-        hit = sum(1 for a in self.answer_ids if a in retrievable)
+        hit = sum(1 for a in self.answer_ids if norm_arxiv_id(a) in retrievable)
         if hit == 0:
             return "none"
         if hit == len(self.answer_ids):
@@ -73,3 +78,39 @@ def all_gold_ids() -> set:
         for r in load_queries(split):
             ids.update(r.answer_ids)
     return ids
+
+
+# Section-header phrases that leaked into id2paper/zip as fake titles.
+_JUNK_TITLES = {
+    "introduction", "abstract", "references", "related work", "background",
+    "conclusion", "conclusions", "methodology", "methods", "experiments", "results",
+}
+
+
+def _looks_like_title(title: str) -> bool:
+    """A usable human title: non-empty, >3 chars, and not a bare section header."""
+    if not title:
+        return False
+    t = title.strip()
+    if len(t) <= 3:
+        return False
+    import re
+    canon = re.sub(r"\s+", " ", re.sub(r"^[\d\.\s]+", "", t.lower())).strip()
+    return canon not in _JUNK_TITLES
+
+
+def gold_id_to_title() -> dict:
+    """Map normalized gold id -> a good human title from AutoScholarQuery answer_titles.
+
+    Used to backfill corpus papers whose zip-extracted title is junk ('1 Introduction').
+    answer_ids and answer_titles are paired lists; we keep the first usable title per id.
+    """
+    from .normalize import norm_arxiv_id
+    out: dict = {}
+    for split in ("train", "dev", "test"):
+        for r in load_queries(split):
+            for aid, title in zip(r.answer_ids, r.answer_titles):
+                nid = norm_arxiv_id(aid)
+                if nid and nid not in out and _looks_like_title(title):
+                    out[nid] = title.strip()
+    return out

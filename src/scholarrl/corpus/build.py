@@ -14,17 +14,16 @@ from __future__ import annotations
 import json
 import random
 import zipfile
-from typing import Dict, Iterable, Optional
+from typing import Dict, Optional
 
 from ..paths import CORPUS_ZIP, PAPERS_JSONL, CORPUS_DIR
 from ..data import (
-    all_gold_ids,
-    load_id2paper,
-    norm_title,
     resolve_gold,
     zip_filenames,
     retrievable_gold_ids,
+    gold_id_to_title,
 )
+from ..data.queries import _looks_like_title
 
 
 def _read_paper(zf: zipfile.ZipFile, filename: str) -> Optional[dict]:
@@ -45,9 +44,9 @@ def build_corpus(distractor_ratio: int = 5, seed: int = 42) -> Dict[str, int]:
     CORPUS_DIR.mkdir(parents=True, exist_ok=True)
     rng = random.Random(seed)
 
-    id2paper = load_id2paper()
     names = zip_filenames()
-    gold_ids = retrievable_gold_ids()          # only the ones actually in the zip
+    gold_ids = retrievable_gold_ids()          # only the ones actually in the zip (normalized)
+    gold_titles = gold_id_to_title()           # normalized id -> good human title (backfill)
 
     # map each retrievable gold id -> its zip filename
     gold_filename: Dict[str, str] = {}
@@ -66,6 +65,7 @@ def build_corpus(distractor_ratio: int = 5, seed: int = 42) -> Dict[str, int]:
     written_gold = 0
     written_distractor = 0
     skipped = 0
+    backfilled = 0
     with zipfile.ZipFile(CORPUS_ZIP) as zf, open(PAPERS_JSONL, "w", encoding="utf-8") as out:
         # gold papers first (paper_id = arxiv_id)
         for aid, fname in gold_filename.items():
@@ -73,6 +73,11 @@ def build_corpus(distractor_ratio: int = 5, seed: int = 42) -> Dict[str, int]:
             if paper is None:
                 skipped += 1
                 continue
+            # Some zip entries have a junk section-header title ('1 Introduction').
+            # Backfill from the human answer_titles so BM25 can actually find these gold papers.
+            if not _looks_like_title(paper["title"]) and aid in gold_titles:
+                paper["title"] = gold_titles[aid]
+                backfilled += 1
             out.write(json.dumps({"paper_id": aid, **paper}, ensure_ascii=False) + "\n")
             written_gold += 1
         # distractors (paper_id = filename)
@@ -89,4 +94,5 @@ def build_corpus(distractor_ratio: int = 5, seed: int = 42) -> Dict[str, int]:
         "distractors": written_distractor,
         "total": written_gold + written_distractor,
         "skipped": skipped,
+        "backfilled_titles": backfilled,
     }
