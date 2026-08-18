@@ -4,3 +4,7 @@
 - format reward (lambda_fmt): small bonus for well-formed action tags; stabilizes 1.5B.
 - Phase 3 cost-aware: - alpha * (#search calls) - beta * (token cost).
 """
+from .recall import recall_at_k, f1, task_reward
+from .format import format_reward
+
+__all__ = ["recall_at_k", "f1", "task_reward", "format_reward"]
