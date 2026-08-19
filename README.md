@@ -54,7 +54,8 @@ Phase 0 (close the loop) is implemented and tested:
 - `retriever/` — BM25 behind a pluggable interface; index built.
 - `env/` — action parsing + `SearchEnv` (search/read/select/finish, Style A: read-before-select).
 - `reward/` — Recall@K / F1 (task) + effectiveness-based format shaping.
-- tests — 37 passing (`tests/`); env tests skip if the index isn't built.
+- `rollout/` — `run_episode` + pluggable `Policy` (`StubPolicy` for tests, `HFPolicy` for real models); records chat-format trajectories (system rules + question + turns) for GRPO.
+- tests — 44 passing (`tests/`); env tests skip if the index isn't built.
 
 **BM25 zero-rewrite baseline (dev, k=20): mean gold recall ≈ 0.25**, ~38% of queries hit
 ≥1 gold — moderate, so there's real room for the agent to improve via query rewriting.
@@ -62,4 +63,4 @@ Phase 0 (close the loop) is implemented and tested:
 Turn budget uses **method C**: `max_retrieval_turns` bounds the expensive actions
 (search + read); `select`/`finish` are free, with a `max_steps` hard cap against loops.
 
-Next: `rollout/` (multi-turn trajectory collection with a pluggable policy) → `grpo/`.
+Next: zero-shot baseline with `HFPolicy` (Qwen2.5-3B on the server) → `grpo/`.
