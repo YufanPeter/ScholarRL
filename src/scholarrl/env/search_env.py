@@ -1,11 +1,12 @@
 """The search environment: a Gym-style loop that ties actions + retriever + reward together.
 
 Interaction (aligned with Search-R1's generate -> retrieve -> observe loop, extended to a
-retrieval task with an explicit select step):
+retrieval task with an explicit select step). The env is stateful text-in/text-out; the
+policy that produces `text` sees the full conversation (see rollout.run_episode):
 
-    obs = env.reset(record)          # pose a question
+    obs = env.reset(record)          # pose a question (system_prompt() holds the rules)
     while not done:
-        text = model.generate(obs)   # one action per turn (rollout uses STOP_TOKENS)
+        text = policy.generate(messages)  # one action per turn, from full history
         obs, done, info = env.step(text)
 
 Design (Style A):
@@ -214,9 +215,14 @@ class SearchEnv:
                f"task={task:.3f} format={fmt:+.3f} total={total:.3f}")
         return obs, True, info
 
-    # --- helpers -----------------------------------------------------------
+    # --- prompts -----------------------------------------------------------
 
-    def _prompt(self) -> str:
+    def system_prompt(self) -> str:
+        """Fixed rules shared by every query: role + action protocol + budget.
+
+        The env owns this because the action space is defined here — the protocol
+        the model is told must match what parse_action / step actually accept.
+        """
         return (
             "You are a research assistant finding papers that answer a question.\n"
             "Actions (emit exactly one per turn):\n"
@@ -225,9 +231,14 @@ class SearchEnv:
             "  <select>id,...</select>  add papers to your answer (must <read> first)\n"
             "  <finish/>                submit your answer set\n"
             f"You may search/read up to {self.max_retrieval_turns} times; "
-            "selecting and finishing are free.\n\n"
-            f"Question: {self.state.question}"
+            "selecting and finishing are free."
         )
+
+    # --- helpers -----------------------------------------------------------
+
+    def _prompt(self) -> str:
+        """Per-query user message: just the question (rules live in system_prompt)."""
+        return f"Question: {self.state.question}"
 
     def _truncate(self, text: str) -> str:
         words = text.split()
