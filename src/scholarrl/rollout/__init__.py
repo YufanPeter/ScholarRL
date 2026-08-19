@@ -1,8 +1,11 @@
-"""Rollout loop: query -> (policy acts, env responds)* -> reward + logged trajectory.
+"""Rollout: run trajectories and record them for training."""
+from .policy import Policy, StubPolicy, HFPolicy
+from .rollout import Trajectory, run_episode
 
-For each query, sample G trajectories (GRPO group). Log per step:
-state, action, generated tokens, retrieved-token mask, final reward.
-Trajectories -> outputs/trajectories/*.jsonl (reused by eval, GRPO, failure mining).
-
-This is the closed loop; Phase 0 acceptance = this runs end-to-end, no gradient step yet.
-"""
+__all__ = [
+    "Policy",
+    "StubPolicy",
+    "HFPolicy",
+    "Trajectory",
+    "run_episode",
+]
