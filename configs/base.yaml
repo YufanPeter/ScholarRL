@@ -8,10 +8,10 @@ corpus:
 
 retriever:
   kind: bm25                   # bm25 (V1) | dense (V2, drop-in)
-  top_k: 3                     # results returned per <search>
+  top_k: 5                     # results returned per <search> (raised from 3 so multi-gold queries can surface enough candidates)
 
 env:
-  max_retrieval_turns: 6       # budget for EXPENSIVE actions (search + read); select/finish are free
+  max_retrieval_turns: 8       # budget for EXPENSIVE actions (search + read); select/finish are free (raised from 6 so multi-gold queries can read/select enough papers)
   max_steps: 20                # hard cap on total steps (prevents cheap-action loops)
   dedup_queries: true
   abstract_max_words: 256      # abstracts truncated by whitespace-split words (matches env)

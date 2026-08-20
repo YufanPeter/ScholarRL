@@ -55,9 +55,9 @@ class SearchEnv:
     def __init__(
         self,
         retriever: BM25Retriever,
-        max_retrieval_turns: int = 6,
+        max_retrieval_turns: int = 8,
         max_steps: int = 20,
-        top_k: int = 3,
+        top_k: int = 5,
         abstract_max_words: int = 256,
         dedup_queries: bool = True,
         metric: str = "recall",

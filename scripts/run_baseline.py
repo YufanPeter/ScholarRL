@@ -44,6 +44,9 @@ def main():
     parser.add_argument("--temperature", type=float, default=0.0,
                         help="hf sampling temperature; 0 = greedy/deterministic (default)")
     parser.add_argument("--seed", type=int, default=42, help="RNG seed for reproducibility")
+    parser.add_argument("--keep-unanswerable", action="store_true",
+                        help="keep queries whose gold has no retrievable paper (recall forced to 0); "
+                             "default skips them so the score reflects what the agent can control")
     args = parser.parse_args()
 
     # Fix all RNGs before building the policy so a run is reproducible.
@@ -58,6 +61,21 @@ def main():
         policy = StubPolicy()
     env = SearchEnv(retriever)
     queries = load_queries(args.split)
+
+    # Drop queries with no retrievable gold: their recall is forced to 0 no matter
+    # what the agent does, so keeping them just deflates the score. Filter before the
+    # --num_queries slice so the limit counts answerable queries.
+    if not args.keep_unanswerable:
+        from scholarrl.data.retrievable import retrievable_gold_ids
+        from scholarrl.data.normalize import norm_arxiv_id
+        ret = retrievable_gold_ids()
+        n_before = len(queries)
+        queries = [q for q in queries
+                   if any(norm_arxiv_id(g) in ret for g in q.answer_ids)]
+        n_skipped = n_before - len(queries)
+        if n_skipped:
+            print(f"Skipped {n_skipped} unanswerable queries (no retrievable gold); "
+                  f"{len(queries)} remain. Use --keep-unanswerable to include them.")
 
     if args.num_queries is not None:
         queries = queries[:args.num_queries]
