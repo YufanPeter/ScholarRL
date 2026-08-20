@@ -11,6 +11,7 @@ See `../Scholar-R1_Project_Plan.md` for the full plan.
 ```
 src/scholarrl/
   paths.py       central path config (override root with $SCHOLAR_DATA)
+  config.py      load configs/base.yaml into typed dataclasses; build_env()
   data/          load AutoScholarQuery + id2paper; answer-coverage report
   corpus/        cs_paper_2nd.zip -> subset corpus (gold + distractors) -> papers.jsonl
   retriever/     pluggable Retriever interface; BM25 (V1), dense (V2)
@@ -19,7 +20,7 @@ src/scholarrl/
   rollout/       query -> actions -> reward + logged trajectory (the closed loop)
   eval/          Recall/Precision/NDCG@K, search-call & token stats
   grpo/          Stage A minimal GRPO from scratch; Stage B veRL port
-configs/         base.yaml (starting hyperparameters)
+configs/         base.yaml — source of truth for hyperparameters (loaded by config.py)
 scripts/         entrypoints
 data/            gitignored; raw/ symlinks the Desktop downloads
 outputs/         gitignored; trajectories / checkpoints / logs
@@ -55,7 +56,7 @@ Phase 0 (close the loop) is implemented and tested:
 - `env/` — action parsing + `SearchEnv` (search/read/select/finish, Style A: read-before-select).
 - `reward/` — Recall@K / F1 (task) + effectiveness-based format shaping.
 - `rollout/` — `run_episode` + pluggable `Policy` (`StubPolicy` for tests, `HFPolicy` for real models); records chat-format trajectories (system rules + question + turns) for GRPO.
-- tests — 44 passing (`tests/`); env tests skip if the index isn't built.
+- tests — 50 passing (`tests/`); env/rollout tests skip if the index isn't built.
 
 **BM25 zero-rewrite baseline (dev, k=20): mean gold recall ≈ 0.25**, ~38% of queries hit
 ≥1 gold — moderate, so there's real room for the agent to improve via query rewriting.

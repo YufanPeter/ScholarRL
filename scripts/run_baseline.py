@@ -8,8 +8,8 @@ import argparse
 import json
 from pathlib import Path
 
+from scholarrl.config import load_config, build_env
 from scholarrl.data.queries import load_queries
-from scholarrl.env import SearchEnv
 from scholarrl.retriever import BM25Retriever
 from scholarrl.rollout import StubPolicy, HFPolicy, run_episode
 
@@ -35,7 +35,8 @@ def _set_seed(seed: int) -> None:
 def main():
     parser = argparse.ArgumentParser(description="Baseline agent evaluation")
     parser.add_argument("--policy", default="stub", choices=["stub", "hf"])
-    parser.add_argument("--model", default="Qwen/Qwen2.5-3B-Instruct", help="model name for hf policy")
+    parser.add_argument("--config", type=str, default=None, help="path to a config yaml (default: configs/base.yaml)")
+    parser.add_argument("--model", default=None, help="model name for hf policy (default: config model.name)")
     parser.add_argument("--split", default="dev", choices=["train", "dev", "test"])
     parser.add_argument("--num_queries", type=int, default=None, help="Limit number of queries")
     parser.add_argument("--output", type=str, default=None, help="Output jsonl path")
@@ -43,23 +44,29 @@ def main():
     # plus a fixed seed. Pass --temperature >0 to sample instead.
     parser.add_argument("--temperature", type=float, default=0.0,
                         help="hf sampling temperature; 0 = greedy/deterministic (default)")
-    parser.add_argument("--seed", type=int, default=42, help="RNG seed for reproducibility")
+    parser.add_argument("--seed", type=int, default=None, help="RNG seed (default: config seed)")
     parser.add_argument("--keep-unanswerable", action="store_true",
                         help="keep queries whose gold has no retrievable paper (recall forced to 0); "
                              "default skips them so the score reflects what the agent can control")
     args = parser.parse_args()
 
+    # Config is the source of truth for env budget, retriever top_k, reward, model,
+    # and seed; CLI flags override it when given.
+    cfg = load_config(Path(args.config)) if args.config else load_config()
+    seed = args.seed if args.seed is not None else cfg.seed
+    model_name = args.model or cfg.model.name
+
     # Fix all RNGs before building the policy so a run is reproducible.
-    _set_seed(args.seed)
+    _set_seed(seed)
 
     # Load components
     retriever = BM25Retriever.load()
     if args.policy == "hf":
-        print(f"Loading model {args.model} (temperature={args.temperature}) ...")
-        policy = HFPolicy(model_name=args.model, temperature=args.temperature)
+        print(f"Loading model {model_name} (temperature={args.temperature}) ...")
+        policy = HFPolicy(model_name=model_name, temperature=args.temperature)
     else:
         policy = StubPolicy()
-    env = SearchEnv(retriever)
+    env = build_env(retriever, cfg)   # env budget / top_k / reward all from config
     queries = load_queries(args.split)
 
     # Drop queries with no retrievable gold: their recall is forced to 0 no matter

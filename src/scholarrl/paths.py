@@ -9,6 +9,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = Path(os.environ.get("SCHOLAR_DATA", REPO_ROOT / "data"))
 
+# configs (checked into the repo, not gitignored)
+CONFIG_DIR = REPO_ROOT / "configs"
+BASE_CONFIG = CONFIG_DIR / "base.yaml"
+
 # raw inputs (symlinked from the Desktop downloads; gitignored)
 RAW_DIR = DATA_DIR / "raw"
 TRAIN_JSONL = RAW_DIR / "train.jsonl"

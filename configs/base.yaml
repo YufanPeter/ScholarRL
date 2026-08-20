@@ -1,4 +1,6 @@
-# Scholar-R1 base config. Values here are starting points from the plan, not tuned.
+# Scholar-R1 base config — the source of truth for hyperparameters.
+# Loaded by scholarrl.config.load_config(); scripts build the env via build_env(),
+# so editing a value here actually takes effect (unknown keys fail loudly).
 
 corpus:
   # subset corpus difficulty knob: how many distractor papers per gold paper
