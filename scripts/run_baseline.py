@@ -14,6 +14,24 @@ from scholarrl.retriever import BM25Retriever
 from scholarrl.rollout import StubPolicy, HFPolicy, run_episode
 
 
+def _set_seed(seed: int) -> None:
+    """Seed python / numpy / torch RNGs (torch only if it's installed)."""
+    import random
+    random.seed(seed)
+    try:
+        import numpy as np
+        np.random.seed(seed)
+    except ImportError:
+        pass
+    try:
+        import torch
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+    except ImportError:
+        pass
+
+
 def main():
     parser = argparse.ArgumentParser(description="Baseline agent evaluation")
     parser.add_argument("--policy", default="stub", choices=["stub", "hf"])
@@ -21,20 +39,32 @@ def main():
     parser.add_argument("--split", default="dev", choices=["train", "dev", "test"])
     parser.add_argument("--num_queries", type=int, default=None, help="Limit number of queries")
     parser.add_argument("--output", type=str, default=None, help="Output jsonl path")
+    # Baseline eval should be reproducible: greedy decoding (temperature=0) by default,
+    # plus a fixed seed. Pass --temperature >0 to sample instead.
+    parser.add_argument("--temperature", type=float, default=0.0,
+                        help="hf sampling temperature; 0 = greedy/deterministic (default)")
+    parser.add_argument("--seed", type=int, default=42, help="RNG seed for reproducibility")
     args = parser.parse_args()
+
+    # Fix all RNGs before building the policy so a run is reproducible.
+    _set_seed(args.seed)
 
     # Load components
     retriever = BM25Retriever.load()
     if args.policy == "hf":
-        print(f"Loading model {args.model} ...")
-        policy = HFPolicy(model_name=args.model)
+        print(f"Loading model {args.model} (temperature={args.temperature}) ...")
+        policy = HFPolicy(model_name=args.model, temperature=args.temperature)
     else:
         policy = StubPolicy()
     env = SearchEnv(retriever)
     queries = load_queries(args.split)
 
-    if args.num_queries:
+    if args.num_queries is not None:
         queries = queries[:args.num_queries]
+
+    if not queries:
+        print(f"No queries to run for split={args.split} (num_queries={args.num_queries}).")
+        return
 
     print(f"Running baseline on {len(queries)} queries from {args.split}...")
 

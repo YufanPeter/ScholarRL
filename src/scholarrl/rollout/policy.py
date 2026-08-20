@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from typing import List, Protocol
 
+from scholarrl.env.actions import STOP_TOKENS
+
 
 class Policy(Protocol):
     """Interface for action generation policies."""
@@ -107,8 +109,14 @@ class HFPolicy:
                 **inputs,
                 max_new_tokens=self.max_new_tokens,
                 do_sample=self.temperature > 0,
-                temperature=self.temperature,
+                temperature=self.temperature if self.temperature > 0 else None,
                 pad_token_id=self.tokenizer.eos_token_id,
+                # Stop as soon as one action's closing tag fires, so each turn emits
+                # exactly ONE action (matches the contract documented in env.actions).
+                # Without this the model runs to max_new_tokens and may emit several
+                # actions or hallucinate the env's reply.
+                stop_strings=STOP_TOKENS,
+                tokenizer=self.tokenizer,
             )
         # decode only the newly generated tokens (strip the prompt)
         new_tokens = out[0][inputs["input_ids"].shape[1]:]
