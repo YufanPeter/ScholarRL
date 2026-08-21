@@ -34,6 +34,29 @@ class Trajectory:
     steps: int = 0
     reason: str = ""
 
+    def to_dict(self, include_messages: bool = True) -> dict:
+        """Serialize to a dict for JSON output.
+
+        include_messages: if False, omit messages/actions/observations (lightweight mode).
+        """
+        obj = {
+            "query_id": self.query_id,
+            "question": self.question,
+            "reward": self.reward,
+            "task_reward": self.task_reward,
+            "format_reward": self.format_reward,
+            "selected": self.selected,
+            "gold": self.gold,
+            "retrieval_turns": self.retrieval_turns,
+            "steps": self.steps,
+            "reason": self.reason,
+        }
+        if include_messages:
+            obj["messages"] = self.messages
+            obj["actions"] = self.actions
+            obj["observations"] = self.observations
+        return obj
+
 
 def run_episode(
     env: SearchEnv,

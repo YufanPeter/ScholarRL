@@ -40,6 +40,11 @@ def main():
     parser.add_argument("--split", default="dev", choices=["train", "dev", "test"])
     parser.add_argument("--num_queries", type=int, default=None, help="Limit number of queries")
     parser.add_argument("--output", type=str, default=None, help="Output jsonl path")
+    parser.add_argument("--save-trajectories", action="store_true", default=True,
+                        help="Save full trajectories (messages/actions); default True. "
+                             "Use --no-save-trajectories for lightweight summary-only mode.")
+    parser.add_argument("--no-save-trajectories", dest="save_trajectories", action="store_false",
+                        help="Skip saving full trajectories (summary only)")
     # Baseline eval should be reproducible: greedy decoding (temperature=0) by default,
     # plus a fixed seed. Pass --temperature >0 to sample instead.
     parser.add_argument("--temperature", type=float, default=0.0,
@@ -116,26 +121,83 @@ def main():
     print(f"  Average task reward: {avg_task:.4f}")
     print(f"  Episodes:            {len(trajectories)}")
 
-    # Save trajectories
+    # Save trajectories and summary
     if args.output:
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Build metadata
+        metadata = {
+            "_meta": True,
+            "split": args.split,
+            "policy": args.policy,
+            "model": model_name,
+            "temperature": args.temperature,
+            "seed": seed,
+            "n_queries": len(queries),
+            "avg_reward": avg_reward,
+            "avg_task_reward": avg_task,
+            "config": {
+                "max_retrieval_turns": cfg.env.max_retrieval_turns,
+                "max_steps": cfg.env.max_steps,
+                "top_k": cfg.retriever.top_k,
+                "reward_metric": cfg.reward.metric,
+                "reward_k": cfg.reward.k,
+                "lambda_fmt": cfg.reward.lambda_fmt,
+                "distractor_ratio": cfg.corpus.distractor_ratio,
+            },
+        }
+
+        # Write JSONL: first line = metadata, subsequent lines = trajectories
         with open(output_path, "w", encoding="utf-8") as f:
+            f.write(json.dumps(metadata, ensure_ascii=False) + "\n")
             for traj in trajectories:
-                obj = {
-                    "query_id": traj.query_id,
-                    "question": traj.question,
-                    "reward": traj.reward,
-                    "task_reward": traj.task_reward,
-                    "format_reward": traj.format_reward,
-                    "selected": traj.selected,
-                    "gold": traj.gold,
-                    "retrieval_turns": traj.retrieval_turns,
-                    "steps": traj.steps,
-                    "reason": traj.reason,
-                }
+                obj = traj.to_dict(include_messages=args.save_trajectories)
                 f.write(json.dumps(obj, ensure_ascii=False) + "\n")
         print(f"\nTrajectories saved to {output_path}")
+
+        # Write human-readable summary
+        summary_path = output_path.with_suffix(".summary.txt")
+        with open(summary_path, "w", encoding="utf-8") as f:
+            f.write(f"=== Baseline Evaluation Summary ===\n\n")
+            f.write(f"Split:       {args.split}\n")
+            f.write(f"Policy:      {args.policy}\n")
+            f.write(f"Model:       {model_name}\n")
+            f.write(f"Temperature: {args.temperature}\n")
+            f.write(f"Seed:        {seed}\n\n")
+
+            f.write(f"--- Config ---\n")
+            f.write(f"max_retrieval_turns: {cfg.env.max_retrieval_turns}\n")
+            f.write(f"max_steps:           {cfg.env.max_steps}\n")
+            f.write(f"top_k:               {cfg.retriever.top_k}\n")
+            f.write(f"reward_metric:       {cfg.reward.metric}\n")
+            f.write(f"reward_k:            {cfg.reward.k}\n")
+            f.write(f"lambda_fmt:          {cfg.reward.lambda_fmt}\n")
+            f.write(f"distractor_ratio:    {cfg.corpus.distractor_ratio}\n\n")
+
+            f.write(f"--- Results ---\n")
+            f.write(f"Queries evaluated:   {len(trajectories)}\n")
+            f.write(f"Average reward:      {avg_reward:.4f}\n")
+            f.write(f"Average task reward: {avg_task:.4f}\n")
+
+            # Basic stats
+            task_rewards = [t.task_reward for t in trajectories]
+            hit_any = sum(1 for r in task_rewards if r > 0)
+            retrieval_turns = [t.retrieval_turns for t in trajectories]
+            budget_capped = sum(1 for r in retrieval_turns if r >= cfg.env.max_retrieval_turns)
+
+            f.write(f"\n--- Statistics ---\n")
+            f.write(f"Recall@{cfg.reward.k} (task reward):\n")
+            f.write(f"  Mean:   {avg_task:.4f}\n")
+            f.write(f"  Median: {sorted(task_rewards)[len(task_rewards)//2]:.4f}\n")
+            f.write(f"  Min:    {min(task_rewards):.4f}\n")
+            f.write(f"  Max:    {max(task_rewards):.4f}\n")
+            f.write(f"Hit rate (≥1 gold): {hit_any}/{len(task_rewards)} ({100*hit_any/len(task_rewards):.1f}%)\n")
+            f.write(f"\nRetrieval turns:\n")
+            f.write(f"  Mean:   {sum(retrieval_turns)/len(retrieval_turns):.1f}\n")
+            f.write(f"  Budget-capped: {budget_capped}/{len(retrieval_turns)} ({100*budget_capped/len(retrieval_turns):.1f}%)\n")
+
+        print(f"Summary saved to {summary_path}")
 
 
 if __name__ == "__main__":
