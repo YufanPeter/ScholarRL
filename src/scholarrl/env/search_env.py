@@ -140,11 +140,13 @@ class SearchEnv:
         hits = self.retriever.search(query, k=self.top_k)
         if not hits:
             return f"[search] no results for '{query}'.", False
-        lines = [f"Search results for '{query}' (titles only; <read> id for the abstract):"]
+        lines = [f"Search results for '{query}' (titles only; <read> the id for the abstract):"]
         for pid, _score in hits:
             self.state.seen_ids.add(pid)
             title = (self.retriever.get(pid).get("title") or "").strip() or "(no title)"
-            lines.append(f"  [{pid}] {title}")
+            # 'id=<pid>' (not '[<pid>]') so the model copies the id verbatim instead of
+            # mistaking a bracketed leading token for a 1-based list index (read(1)/select(1)).
+            lines.append(f"  id={pid}  {title}")
         return "\n".join(lines), True
 
     def _do_read(self, paper_id: Optional[str]) -> Tuple[str, bool]:
@@ -231,7 +233,10 @@ class SearchEnv:
             "  <select>id,...</select>  add papers to your answer (must <read> first)\n"
             "  <finish/>                submit your answer set\n"
             f"You may search/read up to {self.max_retrieval_turns} times; "
-            "selecting and finishing are free."
+            "selecting and finishing are free.\n"
+            "Each search result line is 'id=<paper_id>  <title>'. Copy the paper_id "
+            "exactly as shown — do not add quotes, an 'id=' prefix, or any extra letters.\n"
+            "Example: after reading, commit with <select>2210.05663,2302.07241</select>"
         )
 
     # --- helpers -----------------------------------------------------------

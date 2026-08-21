@@ -52,12 +52,35 @@ class Action:
     effective: bool = False
 
 
+# A single id token wrapped in the code-like syntax small models fall back to:
+#   id="1709.10441"  paper_id=1810.12281  p_id='...'  "quoted"  p2010.01736
+# We strip these wrappers so a well-intentioned-but-malformed select still resolves
+# against the read/corpus ids, instead of being silently rejected by the select gate.
+_KWARG_RE = re.compile(r"^(?:paper_?id|p_id|id)\s*=\s*", re.IGNORECASE)
+_STRAY_P_RE = re.compile(r"^p(?=\d{4}\.\d)")  # stray 'p' glued to an arxiv id: p2010.01736
+
+
+def _clean_id(tok: str) -> str:
+    """Strip the kwarg / quote / stray-'p' wrappers off one <select> token.
+
+    Order matters: drop the `id=` prefix, then surrounding quotes, then a stray 'p'
+    that the model sometimes prepends to an arxiv id. Kebab-case corpus ids (all
+    letters) are left untouched — the stray-'p' rule only fires before a digit.
+    """
+    tok = tok.strip()
+    tok = _KWARG_RE.sub("", tok)          # id="..."  -> "..."
+    tok = tok.strip().strip("\"'")         # "1709.10441" -> 1709.10441
+    tok = _STRAY_P_RE.sub("", tok)         # p2010.01736  -> 2010.01736
+    return tok.strip()
+
+
 def _split_ids(text: str) -> List[str]:
     """Split a <select> body into paper ids. Accepts commas / whitespace / newlines.
 
-    "2211.15654, 2302.07241" -> ["2211.15654", "2302.07241"]
+    Each token is de-wrapped (see _clean_id) so code-like output such as
+    'id="2211.15654", p2302.07241' still yields ['2211.15654', '2302.07241'].
     """
-    return [t.strip() for t in re.split(r"[,\s]+", text) if t.strip()]
+    return [c for c in (_clean_id(t) for t in re.split(r"[,\s]+", text)) if c]
 
 
 def parse_action(text: str) -> Action:
@@ -92,7 +115,8 @@ def parse_action(text: str) -> Action:
         # An empty <search></search> is not actionable.
         return Action(kind=SEARCH, query=query, raw=text) if query else Action(kind=INVALID, raw=text)
     if kind == READ:
-        return Action(kind=READ, paper_id=match.group(1).strip(), raw=text)
+        # de-wrap the same code-like syntax we tolerate in <select> (id=, quotes, stray p)
+        return Action(kind=READ, paper_id=_clean_id(match.group(1)), raw=text)
     if kind == SELECT:
         return Action(kind=SELECT, paper_ids=_split_ids(match.group(1)), raw=text)
     return Action(kind=FINISH, raw=text)  # FINISH
