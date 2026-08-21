@@ -234,9 +234,10 @@ class SearchEnv:
             "  <finish/>                submit your answer set\n"
             f"You may search/read up to {self.max_retrieval_turns} times; "
             "selecting and finishing are free.\n"
-            "Each search result line is 'id=<paper_id>  <title>'. Copy the paper_id "
-            "exactly as shown — do not add quotes, an 'id=' prefix, or any extra letters.\n"
-            "Example: after reading, commit with <select>2210.05663,2302.07241</select>"
+            "A search result line looks like:  id=2111.01996  Some Paper Title\n"
+            "Take the token right after 'id=' and use it verbatim, for example "
+            "<read>2111.01996</read> then <select>2111.01996</select> "
+            "(no quotes, no 'id=' prefix, no extra letters)."
         )
 
     # --- helpers -----------------------------------------------------------
