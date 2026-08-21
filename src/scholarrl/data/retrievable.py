@@ -11,14 +11,23 @@ import zipfile
 from functools import lru_cache
 from typing import Set
 
-from ..paths import CORPUS_ZIP
+from ..paths import CORPUS_ZIP, ZIP_NAMELIST_CACHE
 from .queries import all_gold_ids
 from .resolve import resolve_gold
 
 
 @lru_cache(maxsize=1)
 def zip_filenames() -> frozenset:
-    """All filenames inside cs_paper_2nd.zip (namelist only, no extraction)."""
+    """All filenames inside cs_paper_2nd.zip (namelist only, no extraction).
+
+    Prefers a cached namelist (ZIP_NAMELIST_CACHE, one filename per line) when present,
+    so a box that has the built BM25 index but not the 2.3GB zip can still resolve the
+    retrievable-gold set. Falls back to reading the zip's namelist directly. Write the
+    cache with: python -m scripts.build_index (or scripts.dump_namelist).
+    """
+    if ZIP_NAMELIST_CACHE.exists():
+        with open(ZIP_NAMELIST_CACHE, "r", encoding="utf-8") as f:
+            return frozenset(line.rstrip("\n") for line in f if line.strip())
     with zipfile.ZipFile(CORPUS_ZIP) as zf:
         return frozenset(zf.namelist())
 
