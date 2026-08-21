@@ -4,9 +4,9 @@
 
 corpus:
   # subset corpus difficulty knob: how many distractor papers per gold paper
-  distractor_ratio: 5          # start easy (5), raise later for harder retrieval
-  hard_negative_topk: 20       # pull BM25 top-k non-answers as hard negatives
-  include_random_distractors: true
+  distractor_ratio: 10         # random distractors per gold; 10 = closer to realistic difficulty (was 5, too easy -> inflated baseline)
+  hard_negative_topk: 20       # RESERVED for Phase 2 (BM25 hard negatives); not applied by build_corpus yet
+  include_random_distractors: true  # false -> gold-only corpus (debug)
 
 retriever:
   kind: bm25                   # bm25 (V1) | dense (V2, drop-in)

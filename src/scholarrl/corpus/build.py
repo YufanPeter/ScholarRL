@@ -39,8 +39,16 @@ def _read_paper(zf: zipfile.ZipFile, filename: str) -> Optional[dict]:
     return {"title": title, "abstract": abstract}
 
 
-def build_corpus(distractor_ratio: int = 5, seed: int = 42) -> Dict[str, int]:
-    """Write the subset corpus to PAPERS_JSONL. Returns counts."""
+def build_corpus(
+    distractor_ratio: int = 5,
+    include_random_distractors: bool = True,
+    seed: int = 42,
+) -> Dict[str, int]:
+    """Write the subset corpus to PAPERS_JSONL. Returns counts.
+
+    distractor_ratio: random distractors per gold paper (difficulty knob).
+    include_random_distractors: if False, corpus is gold-only (debug/easy setting).
+    """
     CORPUS_DIR.mkdir(parents=True, exist_ok=True)
     rng = random.Random(seed)
 
@@ -57,10 +65,13 @@ def build_corpus(distractor_ratio: int = 5, seed: int = 42) -> Dict[str, int]:
     gold_files = set(gold_filename.values())
 
     # sample distractors from non-gold zip files
-    n_distractors = distractor_ratio * len(gold_filename)
-    non_gold = [n for n in names if n not in gold_files]
-    rng.shuffle(non_gold)
-    distractor_files = non_gold[:n_distractors]
+    if include_random_distractors:
+        n_distractors = distractor_ratio * len(gold_filename)
+        non_gold = [n for n in names if n not in gold_files]
+        rng.shuffle(non_gold)
+        distractor_files = non_gold[:n_distractors]
+    else:
+        distractor_files = []
 
     written_gold = 0
     written_distractor = 0
