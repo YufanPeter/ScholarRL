@@ -179,7 +179,7 @@ class SearchEnv:
                 continue
             if pid not in self.state.selected:
                 self.state.selected.append(pid)
-            accepted.append(pid)
+                accepted.append(pid)  # only count as accepted if NEWLY added
         parts = []
         if accepted:
             parts.append(f"[select] added: {', '.join(accepted)}")
