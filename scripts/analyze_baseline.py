@@ -64,7 +64,8 @@ def analyze(path: Path, show_failures: int = 0) -> None:
         if "config" in meta:
             cfg = meta["config"]
             print(f"\nEnv config:")
-            print(f"  max_retrieval_turns: {cfg.get('max_retrieval_turns', '?')}")
+            print(f"  max_search_turns:    {cfg.get('max_search_turns', '?')}")
+            print(f"  max_read_turns:      {cfg.get('max_read_turns', '?')}")
             print(f"  max_steps:           {cfg.get('max_steps', '?')}")
             print(f"  top_k:               {cfg.get('top_k', '?')}")
             print(f"  reward_metric:       {cfg.get('reward_metric', '?')}")
@@ -97,15 +98,21 @@ def analyze(path: Path, show_failures: int = 0) -> None:
     hit_any = sum(1 for r in task_rewards if r > 0)
     hit_rate = 100 * hit_any / len(task_rewards)
 
-    # Budget usage
+    # Budget usage. search/read hold separate budgets, so report them separately;
+    # older runs only logged the shared total, hence the .get fallbacks.
     avg_retrieval_turns = sum(retrieval_turns) / len(retrieval_turns)
     avg_steps = sum(steps) / len(steps)
+    cap_lines = []
     if meta and "config" in meta:
-        max_ret = meta["config"].get("max_retrieval_turns", float("inf"))
-        budget_capped = sum(1 for r in retrieval_turns if r >= max_ret)
-        budget_capped_pct = 100 * budget_capped / len(retrieval_turns)
-    else:
-        budget_capped = budget_capped_pct = None
+        for field, cap_key in (("search_turns", "max_search_turns"),
+                               ("read_turns", "max_read_turns")):
+            cap = meta["config"].get(cap_key)
+            used = [t.get(field) for t in trajs]
+            if cap is None or any(u is None for u in used):
+                continue
+            capped = sum(1 for u in used if u >= cap)
+            cap_lines.append(f"{field:<13} avg {sum(used)/len(used):.2f}/{cap}  "
+                             f"capped {capped}/{len(used)} ({100*capped/len(used):.1f}%)")
 
     # Print results
     print("\n" + "=" * 80)
@@ -141,8 +148,8 @@ def analyze(path: Path, show_failures: int = 0) -> None:
     print("=" * 80)
     print(f"Avg retrieval turns: {avg_retrieval_turns:.2f}")
     print(f"Avg total steps:     {avg_steps:.2f}")
-    if budget_capped is not None:
-        print(f"Budget-capped:       {budget_capped}/{len(retrieval_turns)} ({budget_capped_pct:.1f}%)")
+    for line in cap_lines:
+        print(f"  {line}")
 
     # Failure analysis
     failures = [t for t in trajs if t["task_reward"] == 0]

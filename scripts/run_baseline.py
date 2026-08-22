@@ -138,7 +138,8 @@ def main():
             "avg_reward": avg_reward,
             "avg_task_reward": avg_task,
             "config": {
-                "max_retrieval_turns": cfg.env.max_retrieval_turns,
+                "max_search_turns": cfg.env.max_search_turns,
+                "max_read_turns": cfg.env.max_read_turns,
                 "max_steps": cfg.env.max_steps,
                 "top_k": cfg.retriever.top_k,
                 "reward_metric": cfg.reward.metric,
@@ -167,7 +168,8 @@ def main():
             f.write(f"Seed:        {seed}\n\n")
 
             f.write(f"--- Config ---\n")
-            f.write(f"max_retrieval_turns: {cfg.env.max_retrieval_turns}\n")
+            f.write(f"max_search_turns:    {cfg.env.max_search_turns}\n")
+            f.write(f"max_read_turns:      {cfg.env.max_read_turns}\n")
             f.write(f"max_steps:           {cfg.env.max_steps}\n")
             f.write(f"top_k:               {cfg.retriever.top_k}\n")
             f.write(f"reward_metric:       {cfg.reward.metric}\n")
@@ -183,8 +185,10 @@ def main():
             # Basic stats
             task_rewards = [t.task_reward for t in trajectories]
             hit_any = sum(1 for r in task_rewards if r > 0)
-            retrieval_turns = [t.retrieval_turns for t in trajectories]
-            budget_capped = sum(1 for r in retrieval_turns if r >= cfg.env.max_retrieval_turns)
+            search_turns = [t.search_turns for t in trajectories]
+            read_turns = [t.read_turns for t in trajectories]
+            search_capped = sum(1 for s in search_turns if s >= cfg.env.max_search_turns)
+            read_capped = sum(1 for s in read_turns if s >= cfg.env.max_read_turns)
 
             f.write(f"\n--- Statistics ---\n")
             f.write(f"Recall@{cfg.reward.k} (task reward):\n")
@@ -193,9 +197,13 @@ def main():
             f.write(f"  Min:    {min(task_rewards):.4f}\n")
             f.write(f"  Max:    {max(task_rewards):.4f}\n")
             f.write(f"Hit rate (≥1 gold): {hit_any}/{len(task_rewards)} ({100*hit_any/len(task_rewards):.1f}%)\n")
-            f.write(f"\nRetrieval turns:\n")
-            f.write(f"  Mean:   {sum(retrieval_turns)/len(retrieval_turns):.1f}\n")
-            f.write(f"  Budget-capped: {budget_capped}/{len(retrieval_turns)} ({100*budget_capped/len(retrieval_turns):.1f}%)\n")
+            n = len(trajectories)
+            f.write(f"\nSearch turns:\n")
+            f.write(f"  Mean:   {sum(search_turns)/n:.1f}\n")
+            f.write(f"  Budget-capped: {search_capped}/{n} ({100*search_capped/n:.1f}%)\n")
+            f.write(f"Read turns:\n")
+            f.write(f"  Mean:   {sum(read_turns)/n:.1f}\n")
+            f.write(f"  Budget-capped: {read_capped}/{n} ({100*read_capped/n:.1f}%)\n")
 
         print(f"Summary saved to {summary_path}")
 

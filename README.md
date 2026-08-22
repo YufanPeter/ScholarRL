@@ -56,12 +56,21 @@ Phase 0 (close the loop) is implemented and tested:
 - `env/` — action parsing + `SearchEnv` (search/read/select/finish, Style A: read-before-select).
 - `reward/` — Recall@K / F1 (task) + effectiveness-based format shaping.
 - `rollout/` — `run_episode` + pluggable `Policy` (`StubPolicy` for tests, `HFPolicy` for real models); records chat-format trajectories (system rules + question + turns) for GRPO.
-- tests — 50 passing (`tests/`); env/rollout tests skip if the index isn't built.
+- tests — 59 passing (`tests/`); env/rollout tests skip if the index isn't built.
 
 **BM25 zero-rewrite baseline (dev, k=20): mean gold recall ≈ 0.25**, ~38% of queries hit
 ≥1 gold — moderate, so there's real room for the agent to improve via query rewriting.
 
-Turn budget uses **method C**: `max_retrieval_turns` bounds the expensive actions
-(search + read); `select`/`finish` are free, with a `max_steps` hard cap against loops.
+Turn budget: `max_search_turns` and `max_read_turns` are **separate**, so reading never
+costs a search; `select`/`finish` are free, with `max_steps` and a consecutive-INVALID
+circuit breaker as hard caps against loops. They were one shared budget until
+`scripts/ceiling.py` showed reading ate 6 of every 8 turns, leaving ~3 searches and a
+16.4% candidate ceiling.
 
-Next: zero-shot baseline with `HFPolicy` (Qwen2.5-3B on the server) → `grpo/`.
+**Candidate-pool ceiling (`python -m scripts.ceiling --baseline <run>.jsonl`)** — the
+fraction of gold BM25 ever surfaces, i.e. the hard cap on task reward. On dev-50 with
+the 3B run's own rewrites: 21% at 3×top_5, 29% at top_20 — but **93% when searching each
+gold paper's exact title**. BM25 is not the bottleneck; query rewriting is, which is
+precisely what RL is meant to learn.
+
+Next: re-run the 3B baseline under the split budget → `grpo/`.

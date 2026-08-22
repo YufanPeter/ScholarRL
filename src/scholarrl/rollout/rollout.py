@@ -30,6 +30,8 @@ class Trajectory:
     format_reward: float = 0.0
     selected: List[str] = field(default_factory=list)
     gold: List[str] = field(default_factory=list)
+    search_turns: int = 0
+    read_turns: int = 0
     retrieval_turns: int = 0
     steps: int = 0
     reason: str = ""
@@ -47,6 +49,8 @@ class Trajectory:
             "format_reward": self.format_reward,
             "selected": self.selected,
             "gold": self.gold,
+            "search_turns": self.search_turns,
+            "read_turns": self.read_turns,
             "retrieval_turns": self.retrieval_turns,
             "steps": self.steps,
             "reason": self.reason,
@@ -107,6 +111,8 @@ def run_episode(
             traj.task_reward = info.get("task_reward", 0.0)
             traj.format_reward = info.get("format_reward", 0.0)
             traj.selected = info.get("selected", [])
+            traj.search_turns = info.get("search_turns", 0)
+            traj.read_turns = info.get("read_turns", 0)
             traj.retrieval_turns = info.get("retrieval_turns", 0)
             traj.steps = info.get("steps", 0)
             traj.reason = info.get("reason", "")

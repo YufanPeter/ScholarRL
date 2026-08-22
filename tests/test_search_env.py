@@ -89,45 +89,78 @@ def test_read_unseen_id_is_gated(retriever, rec):
     assert "not in your search" in obs.lower()
 
 
-# --- turn budget (method C): only search/read count; select/finish are free ---
+# --- turn budget: search and read hold SEPARATE budgets; select/finish are free ---
 
-def test_retrieval_budget_gates_but_does_not_end_episode(retriever, rec):
-    env = SearchEnv(retriever, max_retrieval_turns=2, max_steps=20)
+def test_search_budget_gates_but_does_not_end_episode(retriever, rec):
+    env = SearchEnv(retriever, max_search_turns=1, max_read_turns=5, max_steps=20)
     env.reset(rec)
-    env.step("<search>vision language 3D scene</search>")   # retrieval_turn 1
+    env.step("<search>vision language 3D scene</search>")   # search_turn 1 -> budget full
     pid = next(iter(env.state.seen_ids))
-    env.step(f"<read>{pid}</read>")                          # retrieval_turn 2 -> budget full
-    assert env.state.retrieval_turns == 2 and not env.state.done
-    # a further search/read is refused but the episode continues
+    assert env.state.search_turns == 1 and not env.state.done
+    # a further search is refused but the episode continues
     obs, done, _ = env.step("<search>another angle</search>")
-    assert not done and "budget exhausted" in obs
-    assert env.state.retrieval_turns == 2   # refused action did not increment
-    # the paper already read can still be selected, then finished
+    assert not done and "search budget exhausted" in obs
+    assert env.state.search_turns == 1   # refused action did not increment
+    # reading still works: it draws on its own budget
+    obs, done, _ = env.step(f"<read>{pid}</read>")
+    assert not done and "Abstract:" in obs and env.state.read_turns == 1
     env.step(f"<select>{pid}</select>")
     assert pid in env.state.selected
     _, done, info = env.step("<finish/>")
     assert done and info["reason"] == "finish"
 
 
+def test_read_budget_does_not_consume_search_budget(retriever, rec):
+    # exhausting reads must leave searching untouched (the old shared budget did not)
+    env = SearchEnv(retriever, max_search_turns=3, max_read_turns=1, max_steps=20)
+    env.reset(rec)
+    env.step("<search>vision language 3D scene</search>")
+    ids = list(env.state.seen_ids)[:2]
+    env.step(f"<read>{ids[0]}</read>")                       # read budget now full
+    obs, done, _ = env.step(f"<read>{ids[1]}</read>")
+    assert not done and "read budget exhausted" in obs
+    obs, done, _ = env.step("<search>a different angle entirely</search>")
+    assert not done and "Search results" in obs
+    assert env.state.search_turns == 2 and env.state.read_turns == 1
+
+
 def test_select_and_finish_do_not_consume_retrieval_budget(retriever, rec):
     # a full multi-step answer must fit even with a tight retrieval budget
-    env = SearchEnv(retriever, max_retrieval_turns=3, max_steps=20)
+    env = SearchEnv(retriever, max_search_turns=1, max_read_turns=2, max_steps=20)
     env.reset(rec)
-    env.step("<search>vision language 3D scene</search>")    # 1
+    env.step("<search>vision language 3D scene</search>")    # search 1
     ids = list(env.state.seen_ids)[:2]
-    env.step(f"<read>{ids[0]}</read>")                       # 2
-    env.step(f"<read>{ids[1]}</read>")                       # 3  (budget now full)
-    # selecting both should still work because select is free, and env terminates on the
-    # next retrieval action or finish — verify select committed before termination
+    env.step(f"<read>{ids[0]}</read>")                       # read 1
+    env.step(f"<read>{ids[1]}</read>")                       # read 2 (both budgets full)
     env.step(f"<select>{ids[0]},{ids[1]}</select>")
     assert set(ids) <= set(env.state.selected)
     _, done, info = env.step("<finish/>")
     assert done and info["reason"] == "finish"
+    assert info["search_turns"] == 1 and info["read_turns"] == 2
+
+
+def test_consecutive_invalid_ends_episode(retriever, rec):
+    # a model that stops emitting actions repeats prose until max_steps; cut it short
+    env = SearchEnv(retriever, max_consecutive_invalid=2, max_steps=20)
+    env.reset(rec)
+    _, done, _ = env.step("I think none of these papers are relevant.")
+    assert not done
+    _, done, info = env.step("I think none of these papers are relevant.")
+    assert done and info["reason"] == "invalid_loop"
+
+
+def test_valid_action_resets_invalid_streak(retriever, rec):
+    env = SearchEnv(retriever, max_consecutive_invalid=2, max_steps=20)
+    env.reset(rec)
+    env.step("some prose")
+    env.step("<search>vision language 3D scene</search>")   # streak reset
+    _, done, _ = env.step("some prose again")
+    assert not done and env.state.consecutive_invalid == 1
 
 
 def test_max_steps_hard_cap(retriever, rec):
     # cheap actions (empty selects) must not loop forever
-    env = SearchEnv(retriever, max_retrieval_turns=99, max_steps=3)
+    env = SearchEnv(retriever, max_search_turns=99, max_read_turns=99, max_steps=3)
     env.reset(rec)
     env.step("<select></select>")
     env.step("<select></select>")

@@ -32,13 +32,17 @@ class CorpusConfig:
 @dataclass
 class RetrieverConfig:
     kind: str = "bm25"          # bm25 (V1) | dense (V2)
-    top_k: int = 5              # results returned per <search>
+    top_k: int = 10             # results returned per <search>
 
 
 @dataclass
 class EnvConfig:
-    max_retrieval_turns: int = 8    # budget for expensive actions (search + read)
-    max_steps: int = 20             # hard cap on total steps
+    # search and read hold SEPARATE budgets: sharing one let reading starve the only
+    # action that grows the candidate pool (see scripts/ceiling.py).
+    max_search_turns: int = 6
+    max_read_turns: int = 10
+    max_steps: int = 30             # hard cap on total steps
+    max_consecutive_invalid: int = 2  # 0 disables the circuit breaker
     dedup_queries: bool = True
     abstract_max_words: int = 256
 
@@ -126,8 +130,10 @@ def build_env(retriever, config: Config | None = None):
     cfg = config or load_config()
     return SearchEnv(
         retriever,
-        max_retrieval_turns=cfg.env.max_retrieval_turns,
+        max_search_turns=cfg.env.max_search_turns,
+        max_read_turns=cfg.env.max_read_turns,
         max_steps=cfg.env.max_steps,
+        max_consecutive_invalid=cfg.env.max_consecutive_invalid,
         top_k=cfg.retriever.top_k,
         abstract_max_words=cfg.env.abstract_max_words,
         dedup_queries=cfg.env.dedup_queries,

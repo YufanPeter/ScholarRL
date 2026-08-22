@@ -27,7 +27,7 @@ from typing import List, Optional, Tuple
 from scholarrl.data.queries import QueryRecord
 from scholarrl.env.actions import (
     Action, parse_action,
-    SEARCH, READ, SELECT, FINISH,
+    SEARCH, READ, SELECT, FINISH, INVALID,
 )
 from scholarrl.retriever import BM25Retriever
 # reward.* is imported lazily inside _terminate() to avoid a circular import:
@@ -44,9 +44,16 @@ class EnvState:
     seen_ids: set = field(default_factory=set)          # candidates surfaced by search (read gate)
     queries: set = field(default_factory=set)           # past search queries (dedup)
     actions: List[Action] = field(default_factory=list)  # every parsed action (for format reward)
-    retrieval_turns: int = 0   # count of EXPENSIVE actions (search + read) — the real budget
+    search_turns: int = 0      # <search> calls spent
+    read_turns: int = 0        # <read> calls spent (separate budget: see SearchEnv docstring)
+    consecutive_invalid: int = 0  # run length of INVALID turns, reset by any parsed action
     steps: int = 0             # count of ALL steps — hard cap against infinite loops
     done: bool = False
+
+    @property
+    def retrieval_turns(self) -> int:
+        """Total expensive actions spent — reporting only; the budgets are separate."""
+        return self.search_turns + self.read_turns
 
 
 class SearchEnv:
@@ -55,9 +62,11 @@ class SearchEnv:
     def __init__(
         self,
         retriever: BM25Retriever,
-        max_retrieval_turns: int = 8,
-        max_steps: int = 20,
-        top_k: int = 5,
+        max_search_turns: int = 6,
+        max_read_turns: int = 10,
+        max_steps: int = 30,
+        max_consecutive_invalid: int = 2,
+        top_k: int = 10,
         abstract_max_words: int = 256,
         dedup_queries: bool = True,
         metric: str = "recall",
@@ -65,11 +74,15 @@ class SearchEnv:
         lambda_fmt: float = 0.1,
     ):
         self.retriever = retriever
-        # Budget only the EXPENSIVE actions (search + read drive generation/retrieval cost).
-        # select/finish are cheap CPU ops and must not compete with retrieval for the budget,
-        # otherwise a multi-paper answer (avg 2.6 gold/query, read-before-select) can't fit.
-        self.max_retrieval_turns = max_retrieval_turns
+        # SEPARATE budgets for the two expensive actions. They used to share one pool,
+        # which let reading (6 of every 8 turns, measured on dev) starve searching — the
+        # only action that grows the candidate pool. select/finish stay free: they are
+        # cheap CPU ops and must not compete with retrieval, otherwise a multi-paper
+        # answer (avg 2.6 gold/query, read-before-select) cannot fit.
+        self.max_search_turns = max_search_turns
+        self.max_read_turns = max_read_turns
         self.max_steps = max_steps          # hard cap so cheap actions can't loop forever
+        self.max_consecutive_invalid = max_consecutive_invalid
         self.top_k = top_k
         self.abstract_max_words = abstract_max_words
         self.dedup_queries = dedup_queries
@@ -97,17 +110,24 @@ class SearchEnv:
         action = parse_action(text)
         self.state.actions.append(action)
 
-        if action.kind == SEARCH or action.kind == READ:
-            # Retrieval budget GATES expensive actions but does not end the episode:
-            # the agent must still be able to select what it already read and then finish.
-            if self.state.retrieval_turns >= self.max_retrieval_turns:
-                obs = (f"[{action.kind}] retrieval budget exhausted "
-                       f"({self.max_retrieval_turns}); you may still <select> and <finish>.")
-            elif action.kind == SEARCH:
-                self.state.retrieval_turns += 1
-                obs, action.effective = self._do_search(action.query)
+        if action.kind != INVALID:
+            self.state.consecutive_invalid = 0
+
+        if action.kind == SEARCH:
+            # The budget GATES the action but does not end the episode: the agent must
+            # still be able to select what it already read and then finish.
+            if self.state.search_turns >= self.max_search_turns:
+                obs = (f"[search] search budget exhausted ({self.max_search_turns}); "
+                       f"you may still <read>, <select> and <finish>.")
             else:
-                self.state.retrieval_turns += 1
+                self.state.search_turns += 1
+                obs, action.effective = self._do_search(action.query)
+        elif action.kind == READ:
+            if self.state.read_turns >= self.max_read_turns:
+                obs = (f"[read] read budget exhausted ({self.max_read_turns}); "
+                       f"you may still <select> and <finish>.")
+            else:
+                self.state.read_turns += 1
                 obs, action.effective = self._do_read(action.paper_id)
         elif action.kind == SELECT:
             obs, action.effective = self._do_select(action.paper_ids)
@@ -115,8 +135,15 @@ class SearchEnv:
             action.effective = True
             return self._terminate("finish")
         else:  # INVALID
+            self.state.consecutive_invalid += 1
             obs = ("[invalid action] use exactly one of: <search>q</search>, "
                    "<read>id</read>, <select>id,...</select>, <finish/>")
+            # Circuit breaker: once the model stops emitting actions it tends to repeat
+            # the same prose until max_steps, burning the rest of the trajectory's tokens.
+            if (self.max_consecutive_invalid
+                    and self.state.consecutive_invalid >= self.max_consecutive_invalid):
+                term_obs, done, info = self._terminate("invalid_loop")
+                return f"{obs}\n{term_obs}", done, info
 
         # hard step cap: only the total-step limit ends a non-finished episode, so cheap
         # actions can't loop forever, but the agent always gets to commit its answer.
@@ -209,6 +236,8 @@ class SearchEnv:
             "format_reward": fmt,
             "selected": list(self.state.selected),
             "gold": list(self.state.gold),
+            "search_turns": self.state.search_turns,
+            "read_turns": self.state.read_turns,
             "retrieval_turns": self.state.retrieval_turns,
             "steps": self.state.steps,
             "reason": reason,
@@ -232,8 +261,11 @@ class SearchEnv:
             "  <read>paper_id</read>    read one paper's abstract\n"
             "  <select>id,...</select>  add papers to your answer (must <read> first)\n"
             "  <finish/>                submit your answer set\n"
-            f"You may search/read up to {self.max_retrieval_turns} times; "
-            "selecting and finishing are free.\n"
+            f"You may <search> up to {self.max_search_turns} times and <read> up to "
+            f"{self.max_read_turns} times; these budgets are separate, so reading never "
+            "costs you a search. Selecting and finishing are free.\n"
+            "Each search should attack the question from a genuinely different angle — "
+            "rewording the same phrase returns the same papers.\n"
             "A search result line looks like:  id=2111.01996  Some Paper Title\n"
             "Take the token right after 'id=' and use it verbatim, for example "
             "<read>2111.01996</read> then <select>2111.01996</select> "

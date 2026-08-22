@@ -10,11 +10,19 @@ corpus:
 
 retriever:
   kind: bm25                   # bm25 (V1) | dense (V2, drop-in)
-  top_k: 5                     # results returned per <search> (raised from 3 so multi-gold queries can surface enough candidates)
+  top_k: 10                    # results returned per <search> (5 -> 10: scripts.ceiling shows
+                               # the ceiling rising 18% -> 23% on the raw question; beyond 20 the
+                               # gain is small next to the observation-length cost in GRPO)
 
 env:
-  max_retrieval_turns: 8       # budget for EXPENSIVE actions (search + read); select/finish are free (raised from 6 so multi-gold queries can read/select enough papers)
-  max_steps: 20                # hard cap on total steps (prevents cheap-action loops)
+  # search and read used to share ONE budget, so reading ate 6 of every 8 turns and only
+  # ~3 searches were left -> only 16.4% of gold was ever surfaced. Separate budgets stop
+  # reading from starving the only action that can grow the candidate pool.
+  max_search_turns: 6          # how many <search> calls (grows the candidate pool)
+  max_read_turns: 10           # how many <read> calls (inspects candidates)
+  max_steps: 30                # hard cap on total steps (16 expensive + selects + finish)
+  max_consecutive_invalid: 2   # 0 = off; ends the episode when the model stops emitting
+                               # actions and just repeats prose (12/50 dev episodes did this)
   dedup_queries: true
   abstract_max_words: 256      # abstracts truncated by whitespace-split words (matches env)
 

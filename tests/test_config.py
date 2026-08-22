@@ -12,8 +12,9 @@ def test_base_config_loads():
     cfg = load_config(BASE_CONFIG)
     assert isinstance(cfg, Config)
     # values we tuned should be reflected
-    assert cfg.retriever.top_k == 5
-    assert cfg.env.max_retrieval_turns == 8
+    assert cfg.retriever.top_k == 10
+    assert cfg.env.max_search_turns == 6
+    assert cfg.env.max_read_turns == 10
     assert cfg.reward.k == 20
     assert cfg.model.name.startswith("Qwen")
     assert cfg.seed == 42
@@ -25,7 +26,8 @@ def test_missing_section_uses_defaults(tmp_path):
     p.write_text("env:\n  max_steps: 15\n")
     cfg = load_config(p)
     assert cfg.env.max_steps == 15
-    assert cfg.env.max_retrieval_turns == 8   # default
+    assert cfg.env.max_search_turns == 6      # default
+    assert cfg.env.max_read_turns == 10       # default
     assert cfg.reward.metric == "recall"      # whole section defaulted
 
 
@@ -56,7 +58,8 @@ def test_build_env_applies_config(tmp_path):
         retriever:
           top_k: 7
         env:
-          max_retrieval_turns: 9
+          max_search_turns: 9
+          max_read_turns: 4
           max_steps: 12
         reward:
           metric: f1
@@ -66,7 +69,8 @@ def test_build_env_applies_config(tmp_path):
     cfg = load_config(p)
     env = build_env(retriever=None, config=cfg)
     assert env.top_k == 7
-    assert env.max_retrieval_turns == 9
+    assert env.max_search_turns == 9
+    assert env.max_read_turns == 4
     assert env.max_steps == 12
     assert env.metric == "f1"
     assert env.reward_k == 15
