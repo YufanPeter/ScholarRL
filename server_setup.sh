@@ -1,112 +1,181 @@
 #!/bin/bash
-# ScholarRL 服务器初始化脚本
-# 用法：ssh 到服务器后运行 bash server_setup.sh
+# ScholarRL setup — two modes:
+#
+#   bash server_setup.sh pack     run on the LOCAL machine: package the minimal data set
+#   bash server_setup.sh          run on the SERVER: install, verify data, smoke-test
+#
+# Why "minimal": the 2.5GB cs_paper_2nd.zip is only needed to BUILD the corpus and to
+# list its filenames. Both are already done locally — the built index carries the paper
+# text (papers_meta.jsonl) and data/corpus/zip_namelist.txt replaces the zip's namelist
+# (see src/scholarrl/data/retrievable.py). Shipping the prebuilt artifacts instead of
+# the raw zip is ~500MB rather than ~3.2GB, and skips a re-index on the server.
+#
+# Ship the zip too only if you intend to REBUILD the corpus there (changing
+# distractor_ratio, or Phase 2 hard negatives).
 
-set -e  # 遇到错误就停止
+set -euo pipefail
 
-echo "======================================"
-echo "ScholarRL Server Setup"
-echo "======================================"
+ARCHIVE="scholar_data.tar.gz"
+REPO_URL="https://github.com/YufanPeter/ScholarRL.git"
 
-# 1. Clone 仓库（HTTPS，不需要配置 SSH key）
-echo ""
-echo "[1/6] Cloning repository..."
-if [ ! -d "ScholarRL" ]; then
-    git clone https://github.com/YufanPeter/ScholarRL.git
-    echo "✓ Repository cloned"
-else
-    echo "✓ Repository already exists, pulling latest..."
-    cd ScholarRL && git pull && cd ..
-fi
+# Honour the same override the code uses (src/scholarrl/paths.py).
+DATA_DIR="${SCHOLAR_DATA:-data}"
 
-cd ScholarRL
+# Minimal set needed to RUN (train / eval / rollout). Paths are relative to DATA_DIR.
+RUNTIME_FILES=(
+    "raw/train.jsonl"
+    "raw/dev.jsonl"
+    "raw/test.jsonl"
+    "raw/id2paper.json"              # resolve_gold(): arxiv id -> title
+    "corpus/zip_namelist.txt"        # stands in for the 2.5GB zip
+    "corpus/bm25_index/papers_meta.jsonl"
+    "corpus/bm25_index/params.index.json"
+    "corpus/bm25_index/vocab.index.json"
+    "corpus/bm25_index/data.csc.index.npy"
+    "corpus/bm25_index/indices.csc.index.npy"
+    "corpus/bm25_index/indptr.csc.index.npy"
+)
 
-# 2. 创建虚拟环境（可选，建议用）
-echo ""
-echo "[2/6] Setting up Python environment..."
-if [ ! -d "venv" ]; then
-    python3 -m venv venv
-    echo "✓ Virtual environment created"
-fi
-source venv/bin/activate
-echo "✓ Virtual environment activated"
+ok()   { echo "  ✓ $*"; }
+warn() { echo "  ⚠ $*"; }
+die()  { echo "  ✗ $*" >&2; exit 1; }
+step() { echo; echo "[$1] $2"; }
 
-# 3. 安装依赖
-echo ""
-echo "[3/6] Installing dependencies..."
-pip install --upgrade pip
-pip install -e .
-echo "✓ Dependencies installed"
+# --- pack mode (local machine) --------------------------------------------------
 
-# 4. 准备数据目录
-echo ""
-echo "[4/6] Setting up data directories..."
-mkdir -p data/raw data/corpus outputs/trajectories outputs/checkpoints outputs/logs
+pack() {
+    echo "======================================"
+    echo "Packing minimal data set -> $ARCHIVE"
+    echo "======================================"
+    [ -d "$DATA_DIR" ] || die "no data dir at '$DATA_DIR' (run from the repo root, or set SCHOLAR_DATA)"
 
-# 检查数据文件是否存在
-if [ ! -f "data/raw/train.jsonl" ]; then
-    echo "⚠ WARNING: Data files not found in data/raw/"
-    echo "You need to upload:"
-    echo "  - train.jsonl, dev.jsonl, test.jsonl"
-    echo "  - id2paper.json"
-    echo "  - cs_paper_2nd.zip"
-    echo ""
-    echo "Option 1: Use scp from local machine:"
-    echo "  scp ~/Desktop/data/raw/* server:/path/to/ScholarRL/data/raw/"
-    echo ""
-    echo "Option 2: Set SCHOLAR_DATA env var to point to existing data:"
-    echo "  export SCHOLAR_DATA=/path/to/existing/data"
-    echo ""
-    read -p "Press Enter to continue (will skip data-dependent steps)..."
-else
-    echo "✓ Data files found"
-fi
+    local missing=0
+    for rel in "${RUNTIME_FILES[@]}"; do
+        if [ -f "$DATA_DIR/$rel" ]; then
+            ok "$rel"
+        else
+            warn "MISSING $rel"
+            missing=1
+        fi
+    done
+    if [ "$missing" -ne 0 ]; then
+        echo
+        echo "Build the missing artifacts first:"
+        echo "  python -m scripts.build_corpus && python -m scripts.build_index"
+        die "cannot pack an incomplete data set"
+    fi
 
-# 5. 构建 corpus（如果数据存在）
-echo ""
-echo "[5/6] Building corpus and BM25 index..."
-if [ -f "data/raw/train.jsonl" ]; then
-    echo "Building corpus (distractor_ratio=10)..."
-    python -m scripts.build_corpus
+    # -h follows symlinks: data/raw/* are symlinks to the Desktop downloads.
+    tar -czhf "$ARCHIVE" -C "$DATA_DIR" "${RUNTIME_FILES[@]}"
 
-    echo "Building BM25 index..."
-    python -m scripts.build_index
+    echo
+    ok "created $ARCHIVE ($(du -h "$ARCHIVE" | cut -f1))"
+    echo
+    echo "Next — copy it over and unpack into the repo's data/ dir:"
+    echo "  SERVER=your_user@your_host"
+    echo "  rsync -avzP $ARCHIVE \$SERVER:~/"
+    echo "  ssh \$SERVER 'mkdir -p ~/ScholarRL/data && tar -xzf ~/$ARCHIVE -C ~/ScholarRL/data'"
+    echo "  ssh \$SERVER 'cd ~/ScholarRL && bash server_setup.sh'"
+}
 
-    echo "✓ Corpus and index built"
-else
-    echo "⚠ Skipped (data not found)"
-fi
+# --- setup mode (server) --------------------------------------------------------
 
-# 6. 运行测试（验证安装）
-echo ""
-echo "[6/6] Running tests..."
-python -m pytest tests/test_config.py tests/test_actions.py -v
-echo "✓ Tests passed"
+setup() {
+    echo "======================================"
+    echo "ScholarRL Server Setup"
+    echo "======================================"
 
-# 完成
-echo ""
-echo "======================================"
-echo "Setup Complete!"
-echo "======================================"
-echo ""
-echo "Next steps:"
-echo ""
-echo "1. If data files are missing, upload them to data/raw/"
-echo "   (train.jsonl, dev.jsonl, test.jsonl, id2paper.json, cs_paper_2nd.zip)"
-echo ""
-echo "2. Run baseline evaluation:"
-echo "   python -m scripts.run_baseline \\"
-echo "     --policy hf --model Qwen/Qwen2.5-3B-Instruct \\"
-echo "     --split dev --num_queries 50 \\"
-echo "     --output outputs/baseline_3b_dev50.jsonl"
-echo ""
-echo "3. Analyze results:"
-echo "   cat outputs/baseline_3b_dev50.summary.txt"
-echo "   python -m scripts.analyze_baseline outputs/baseline_3b_dev50.jsonl --show-failures 5"
-echo ""
-echo "4. Full dev evaluation (all 969 queries):"
-echo "   python -m scripts.run_baseline \\"
-echo "     --policy hf --model Qwen/Qwen2.5-3B-Instruct \\"
-echo "     --split dev \\"
-echo "     --output outputs/baseline_3b_dev_full.jsonl"
-echo ""
+    step 1/6 "Repository"
+    if [ -f "pyproject.toml" ] && [ -d "src/scholarrl" ]; then
+        ok "already inside the repo ($(pwd))"
+    elif [ -d "ScholarRL" ]; then
+        cd ScholarRL && git pull --ff-only && ok "pulled latest"
+    else
+        git clone "$REPO_URL" && cd ScholarRL && ok "cloned"
+    fi
+
+    step 2/6 "Python environment"
+    if [ ! -d "venv" ]; then
+        python3 -m venv venv
+    fi
+    # venv activation trips `set -u` on older virtualenv scripts
+    set +u; source venv/bin/activate; set -u
+    ok "$(python --version) at $(command -v python)"
+
+    step 3/6 "Dependencies"
+    pip install --quiet --upgrade pip
+    pip install --quiet -e .
+    ok "scholarrl installed (editable)"
+    if python -c "import torch" 2>/dev/null; then
+        python - <<'PY'
+import torch
+if torch.cuda.is_available():
+    print(f"  ✓ CUDA: {torch.cuda.get_device_name(0)} "
+          f"({torch.cuda.get_device_properties(0).total_memory / 1e9:.0f} GB)")
+else:
+    print("  ⚠ no CUDA visible — a 3B rollout on CPU is unusably slow")
+PY
+    else
+        warn "torch not installed; install it before running --policy hf"
+    fi
+
+    step 4/6 "Data"
+    mkdir -p "$DATA_DIR/raw" "$DATA_DIR/corpus" outputs/trajectories outputs/checkpoints outputs/logs
+    local missing=()
+    for rel in "${RUNTIME_FILES[@]}"; do
+        [ -f "$DATA_DIR/$rel" ] || missing+=("$rel")
+    done
+    if [ ${#missing[@]} -eq 0 ]; then
+        ok "all runtime files present in '$DATA_DIR' ($(du -sh "$DATA_DIR" | cut -f1))"
+    else
+        echo "  missing ${#missing[@]} file(s) under '$DATA_DIR':"
+        printf '    - %s\n' "${missing[@]}"
+        echo
+        echo "  Pack them on your local machine and copy them over:"
+        echo "    bash server_setup.sh pack"
+        echo "  Or, if the raw zip IS here, build them now:"
+        echo "    python -m scripts.build_corpus && python -m scripts.build_index"
+        die "data incomplete"
+    fi
+
+    step 5/6 "Tests"
+    python -m pytest -q
+
+    step 6/6 "Retrieval sanity check"
+    # End-to-end proof that index + id2paper + the namelist stand-in all line up.
+    # Expect mean gold recall ~0.25; a hard failure here means a missing/stale artifact.
+    python -m scripts.eval_retriever 20 200
+
+    cat <<'EOF'
+
+======================================
+Setup complete
+======================================
+
+Smoke-test the model path first (0.5B is ~1GB and takes minutes, not tens of minutes):
+
+  python -m scripts.run_baseline --policy hf --model Qwen/Qwen2.5-0.5B-Instruct \
+    --split dev --num_queries 3 --output /tmp/smoke.jsonl
+
+Then the real 3B baseline under the split search/read budget (detach: SSH drops kill it):
+
+  nohup python -m scripts.run_baseline --policy hf --split dev --num_queries 50 \
+    --output outputs/baseline_3b_dev50_v2.jsonl > outputs/logs/baseline_v2.log 2>&1 &
+  tail -f outputs/logs/baseline_v2.log
+
+Then inspect — analyze_baseline for behaviour, ceiling for how much gold was reachable:
+
+  python -m scripts.analyze_baseline outputs/baseline_3b_dev50_v2.jsonl --show-failures 5
+  python -m scripts.ceiling --baseline outputs/baseline_3b_dev50_v2.jsonl
+
+outputs/ is gitignored, so pull results back explicitly:
+
+  rsync -avzP your_user@your_host:~/ScholarRL/outputs/baseline_3b_dev50_v2.jsonl ./outputs/
+EOF
+}
+
+case "${1:-setup}" in
+    pack)  pack ;;
+    setup) setup ;;
+    *)     die "usage: bash server_setup.sh [pack|setup]" ;;
+esac

@@ -3,6 +3,7 @@
 /data/
 *.jsonl
 *.zip
+*.tar.gz
 id2paper.json
 
 # ---- extracted / built corpus & indexes ----
