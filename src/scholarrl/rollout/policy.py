@@ -41,8 +41,8 @@ class StubPolicy:
             return "<search>machine learning</search>"
 
         if step == 1:
-            # Read the first paper id from the search results
-            m = re.search(r"\[([^\]]+)\]", last_obs)
+            # Read the first paper id from the search results ('id=<pid>  Title' lines)
+            m = re.search(r"id=(\S+)", last_obs)
             if m:
                 return f"<read>{m.group(1)}</read>"
             return "<finish/>"
