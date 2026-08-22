@@ -6,6 +6,7 @@ Usage:
 """
 import argparse
 import json
+import time
 from pathlib import Path
 
 from scholarrl.config import load_config, build_env
@@ -97,36 +98,14 @@ def main():
         return
 
     print(f"Running baseline on {len(queries)} queries from {args.split}...")
-
-    # Run episodes
-    trajectories = []
-    total_reward = 0.0
-    total_task_reward = 0.0
-
-    for i, record in enumerate(queries):
-        traj = run_episode(env, policy, record)
-        trajectories.append(traj)
-        total_reward += traj.reward
-        total_task_reward += traj.task_reward
-
-        if (i + 1) % 10 == 0:
-            print(f"  {i + 1}/{len(queries)} completed")
-
-    # Report
-    avg_reward = total_reward / len(queries)
-    avg_task = total_task_reward / len(queries)
-
-    print(f"\nBaseline results ({args.split}):")
-    print(f"  Average reward:      {avg_reward:.4f}")
-    print(f"  Average task reward: {avg_task:.4f}")
-    print(f"  Episodes:            {len(trajectories)}")
-
-    # Save trajectories and summary
+    # Metadata is written BEFORE the run so an interrupted run still yields a readable
+    # file. Averages are deliberately not stored here: analyze_baseline derives them from
+    # whatever trajectories exist, which is what you want after an early stop.
+    out_file = None
+    output_path = None
     if args.output:
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Build metadata
         metadata = {
             "_meta": True,
             "split": args.split,
@@ -135,8 +114,6 @@ def main():
             "temperature": args.temperature,
             "seed": seed,
             "n_queries": len(queries),
-            "avg_reward": avg_reward,
-            "avg_task_reward": avg_task,
             "config": {
                 "max_search_turns": cfg.env.max_search_turns,
                 "max_read_turns": cfg.env.max_read_turns,
@@ -148,13 +125,58 @@ def main():
                 "distractor_ratio": cfg.corpus.distractor_ratio,
             },
         }
+        out_file = open(output_path, "w", encoding="utf-8")
+        out_file.write(json.dumps(metadata, ensure_ascii=False) + "\n")
+        out_file.flush()
 
-        # Write JSONL: first line = metadata, subsequent lines = trajectories
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(json.dumps(metadata, ensure_ascii=False) + "\n")
-            for traj in trajectories:
-                obj = traj.to_dict(include_messages=args.save_trajectories)
-                f.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    # Run episodes
+    trajectories = []
+    total_reward = 0.0
+    total_task_reward = 0.0
+    t_start = time.time()
+
+    try:
+        for i, record in enumerate(queries):
+            traj = run_episode(env, policy, record)
+            trajectories.append(traj)
+            total_reward += traj.reward
+            total_task_reward += traj.task_reward
+
+            # Flush every episode: rented-GPU runs get cut off, and a trajectory that
+            # only lives in memory is a trajectory you paid for and lost.
+            if out_file is not None:
+                out_file.write(json.dumps(
+                    traj.to_dict(include_messages=args.save_trajectories),
+                    ensure_ascii=False) + "\n")
+                out_file.flush()
+
+            done = i + 1
+            if done % 5 == 0 or done == len(queries):
+                elapsed = time.time() - t_start
+                eta = elapsed / done * (len(queries) - done)
+                print(f"  {done}/{len(queries)} | {elapsed/60:.1f} min elapsed | "
+                      f"~{eta/60:.1f} min left | avg task {total_task_reward/done:.3f}",
+                      flush=True)
+    except KeyboardInterrupt:
+        print(f"\nInterrupted after {len(trajectories)} episodes; "
+              f"partial results are on disk.", flush=True)
+    finally:
+        if out_file is not None:
+            out_file.close()
+
+    if not trajectories:
+        return
+
+    # Report
+    avg_reward = total_reward / len(trajectories)
+    avg_task = total_task_reward / len(trajectories)
+
+    print(f"\nBaseline results ({args.split}):")
+    print(f"  Average reward:      {avg_reward:.4f}")
+    print(f"  Average task reward: {avg_task:.4f}")
+    print(f"  Episodes:            {len(trajectories)}")
+
+    if output_path is not None:
         print(f"\nTrajectories saved to {output_path}")
 
         # Write human-readable summary
